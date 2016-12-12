@@ -1,0 +1,375 @@
+---
+title: "Twitter Analysis about Coffee"
+author: "Zhouyi Zhao"
+date: "Nov 26"
+output:
+  html_document: default
+  latex_engine: xelatex
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = TRUE)
+Sys.setlocale(category = "LC_ALL", locale = "english")
+library(plyr)
+library(dplyr)
+```
+
+##Introduction
+Recently, I have read about the coffee preference of the US map, and in this survey, the preference of Massachusetts is fairly different from other region. Hence, I choose the top 2 coffee brand in Massachusetts "Dunkin Donuts" and "Starbucks" as the theme in this twitter analysis.
+```{r include=FALSE}
+#api_key <- 	"LFNRqX5i1PkB69SjEEncXWloq"
+#api_secret <- "4sDHqY6aLm7PRfJLxpq6GsWqphZxzX3dXLjssSLXYhO8wPwL3F"
+#access_token <- "11180082-wcpSmzCjbvj0csDhtYP5z32sqzrDhxROEPW9ZNAJY"
+#access_token_secret <- "mxdJoqVpb6dZPcTzko9YGcK1CbLmjKChCiJ5SpxKfDy7z"
+
+#setup_twitter_oauth(api_key, api_secret, access_token, access_token_secret)
+```
+
+```{r include=FALSE}
+#get the data for starbucks and Dunkin Donuts
+#star=userTimeline('Starbucks',n=3600)
+#tw.df=twListToDF(star)
+#saveRDS(tw.df,file="star.rds")
+
+#dd<-userTimeline('DunkinDonuts',n=3600)
+#tw.df.d<-twListToDF(dd)
+#saveRDS(tw.df.d,file="dd.rds")
+```
+
+```{r include=FALSE}
+library(gridExtra)
+library(streamR)
+
+load("my_oauth.Rdata")
+
+filterStream("coffee.json", 
+             track=c("coffee", "starbucks","Dunkin Donuts"), 
+             locations=c(-125,25,-66,50),timeout=30, oauth=my_oauth)
+tweets.df <- parseTweets("coffee.json", verbose=TRUE)
+tweets<-saveRDS(tweets.df,file="coffeet.rds")
+c(length(grep("coffee", tweets.df$text, ignore.case=TRUE)),
+  length(grep("starbucks",tweets.df$text, ignore.case=TRUE)),
+  length(grep("Dunkin Donuts",tweets.df$text, ignore.case=TRUE)))
+tweets.df$location[1:10]
+library(ggplot2)
+library(grid) 
+```
+
+##1.Geographic Analysis
+####(1)Map of tweets distribution
+At first, I made a plot to map the frequence of tweets about coffee.
+
+```{r warning=FALSE,include=FALSE}
+
+
+map.data  <-  map_data("state")  
+tweets.df<-subset(tweets.df,tweets.df$place_lat<50)
+points  <-  data.frame(x = as.numeric(tweets.df$place_lon), 
+                       y = as.numeric(tweets.df$place_lat))
+
+
+points  <- points[points$y > 25, ]  
+ 
+```
+
+```{r echo=FALSE}
+ggplot(map.data) + 
+  geom_map(aes(map_id = region), 
+           map = map.data, 
+           fill = "white",       
+           color = "grey10", size = 0.25) + 
+        geom_point(data = points,       
+        aes(x = x, y = y), size = 1, 
+        alpha = 1/5, color = "orange")+xlim(-125,-60)+theme(axis.line = element_blank(), 
+        axis.text = element_blank(), 
+        axis.ticks = element_blank(),           
+        axis.title = element_blank(), 
+        panel.background = element_blank(), 
+        panel.border = element_blank(),           
+        panel.grid.major = element_blank(), 
+        plot.background = element_blank(),           
+        plot.margin = unit(0 * c( 1.5,  1.5,  1.5,  1.5), "lines"))
+```
+
+According to the plot, we can see that most tweets about coffee are created in the northeastern region and California.
+
+####(2)Statistical Analysis
+```{r}
+model<-lm(favourites_count~friends_count +place_lat +place_lon,data= tweets.df)
+summary(model)
+```
+From the model, we can see that the number of friends and the geographic information significantly affected the favourites count. With the increase of friends, the favorite count will increase. And people at eastern of America are more likely to receive favorites, also, northern people are more likely to receive favorites.
+
+
+
+##2.Analysis of the official twitter account
+####(1)Activeness of the account(the whole period)
+
+```{r include=FALSE}
+library(devtools)
+library(twitteR)
+require(twitteR)
+tw.df<-readRDS("star.rds")
+tw.df.d<-readRDS("dd.rds")
+require(stringr)
+trim <- function (x) sub('@','',x)
+
+tw.df$rt=sapply(tw.df$text,function(tweet) trim(str_match(tweet,"^RT (@[[:alnum:]_]*)")[2]))
+tw.df$rtt=sapply(tw.df$rt,function(rt) if (is.na(rt)) 'T' else 'RT')
+
+tw.df.d$rt=sapply(tw.df.d$text,function(tweet) trim(str_match(tweet,"^RT (@[[:alnum:]_]*)")[2]))
+tw.df.d$rtt=sapply(tw.df.d$rt,function(rt) if (is.na(rt)) 'T' else 'RT')
+require(ggplot2)
+```
+
+```{r warning=FALSE,echo=FALSE}
+combined<-rbind(tw.df,tw.df.d)
+ggplot(combined)+geom_point(aes(x=created,y=screenName,col=screenName))
+combined.file<-saveRDS(combined,file="combined.rds")
+```
+
+```{r include=FALSE}
+tw.dfs=subset(tw.df,subset=((Sys.time()-created)<8000))
+tw.dfs.d=subset(tw.df.d,subset=((Sys.time()-created)<8000))
+tw.dfs.combined<-rbind(tw.dfs,tw.dfs.d)
+```
+
+
+
+```{r}
+ggplot(tw.dfs.combined)+geom_point(aes(x=created,y=screenName,col=screenName))
+#From the plot, we can see that these 3600 tweets are created more recently for Starbucks than Dunkin Donuts, which represents a higher frequency of tweets for Starbucks.
+```
+####(2)Reply condition of the account
+```{r include=FALSE}
+require(plyr)
+
+tw.dfx=ddply(tw.dfs, .var = "replyToSN", .fun = function(x) {return(subset(x, created %in% min(created),select=c(replyToSN,created)))})
+tw.dfxa=arrange(tw.dfx,-desc(created))
+tw.dfs$replyToSN=factor(tw.dfs$replyToSN, levels = tw.dfxa$replyToSN)
+tw.dfx.d=ddply(tw.dfs.d, .var = "replyToSN", .fun = function(x) {return(subset(x, created %in% min(created),select=c(replyToSN,created)))})
+tw.dfxa.d=arrange(tw.dfx.d,-desc(created))
+tw.dfs.d$replyToSN=factor(tw.dfs.d$replyToSN, levels = tw.dfxa.d$replyToSN)
+tw.dfs.combined<-rbind(tw.dfs,tw.dfs.d)
+```
+
+```{r warning=FALSE,echo=FALSE}  
+plot1<-ggplot(tw.dfs)+geom_point(aes(x=as.Date(created, format = "%m/%d/%y"),y=replyToSN))+ theme(axis.text.y=element_blank())+xlab("Date")
+plot2<-ggplot(tw.dfs.d)+geom_point(aes(x=as.Date(created, format = "%m/%d/%y"),y=replyToSN))+ theme(axis.text.y=element_blank())+xlab("Date")
+plot3<-ggplot()+geom_point(data=subset(tw.dfs,subset=(!is.na(replyToSN))),aes(x=created,y=replyToSN),col='red') + geom_point(data=subset(tw.dfs,subset=(!is.na(rt))),aes(x=created,y=rt),col='blue') + geom_point(data=subset(tw.dfs,subset=(is.na(replyToSN) & is.na(rt))),aes(x=created,y=screenName),col='green')+ theme(axis.text.y=element_blank())
+plot4<-ggplot()+geom_point(data=subset(tw.dfs.d,subset=(!is.na(replyToSN))),aes(x=created,y=replyToSN),col='red') + geom_point(data=subset(tw.dfs.d,subset=(!is.na(rt))),aes(x=created,y=rt),col='blue') + geom_point(data=subset(tw.dfs.d,subset=(is.na(replyToSN) & is.na(rt))),aes(x=created,y=screenName),col='green')+ theme(axis.text.y=element_blank())
+grid.arrange(plot1, plot2,plot3,plot4,ncol=2)
+```
+
+Here, the blue dots are old-style retweets, the red dots are replies, and the green dots are tweets that are neither replies nor old-style retweets. If a blue dot appears on a row before a red dot, it shows the official account RT¡¯d them before ever replying to them. We can see that only one blue point in these two plots, which represents these two official account mostly reply to others rather than retweet.
+
+```{r include=FALSE}
+r_table <- table(tw.dfs$replyToSN)
+r_levels <- names(r_table)[order(-r_table)]
+tw.dfs$replyToSN <- factor(tw.dfs$replyToSN, levels = r_levels) 
+r_table.d <- table(tw.dfs.d$replyToSN)
+r_levels.d <- names(r_table.d)[order(-r_table.d)]
+tw.dfs.d$replyToSN <- factor(tw.dfs.d$replyToSN, levels = r_levels.d) 
+```
+
+```{r warning=FALSE,echo=FALSE}
+plot5<-ggplot(subset(tw.dfs,subset=(!is.na(replyToSN))),aes(x=replyToSN)) + geom_bar(aes(y = (..count..)))+theme(axis.text.x=element_text(angle=-90,size=6))+ theme(axis.text.x=element_blank())
+head(table(tw.dfs$replyToSN))
+plot6<-ggplot(subset(tw.dfs.d,subset=(!is.na(replyToSN))),aes(x=replyToSN)) + geom_bar(aes(y = (..count..)))+theme(axis.text.x=element_text(angle=-90,size=6))+ theme(axis.text.x=element_blank())
+grid.arrange(plot5, plot6,ncol=2)
+head(table(tw.dfs.d$replyToSN))
+```
+From these tables and plots we can clearly see that replies to a single person will be no more than 3, and one reply is fairly common in both two accounts.
+
+```{r warning=FALSE}
+topTastic=function(dfc,num=5){
+  r_table <- table(dfc)
+  r_levels <- names(r_table)[order(-r_table)]
+  head(table(factor(dfc, levels = r_levels)),num)
+}
+```
+
+```{r warning=FALSE}
+topTastic(tw.dfs$rt)
+topTastic(tw.dfs$replyToSN,10)
+```
+These tables shows similar result.
+
+####(3) Activeness of the account(weekday and hour)
+```{r include=FALSE}
+tw.dfs$month=sapply(tw.dfs$created, function(x) {p=as.POSIXlt(x);p$mon})
+tw.dfs$hour=sapply(tw.dfs$created, function(x) {p=as.POSIXlt(x);p$hour})
+tw.dfs$wday=sapply(tw.dfs$created, function(x) {p=as.POSIXlt(x);p$wday})
+
+tw.dfs.d$month=sapply(tw.dfs.d$created, function(x) {p=as.POSIXlt(x);p$mon})
+tw.dfs.d$hour=sapply(tw.dfs.d$created, function(x) {p=as.POSIXlt(x);p$hour})
+tw.dfs.d$wday=sapply(tw.dfs.d$created, function(x) {p=as.POSIXlt(x);p$wday})
+```
+
+```{r warning=FALSE}
+tw.dfs.combined<-rbind(tw.dfs,tw.dfs.d)
+ggplot(tw.dfs.combined)+geom_jitter(aes(x=wday,y=hour,color=screenName))
+```
+
+From the plot, we can see that Dunkin Donuts prefer to tweet in weekdays, and starbucks has a relatively balance tweets every day.And most tweets are occured during 10am to 12am. During the weekends, Starbucks will tweet in the early morning.
+
+```{r warning=FALSE}
+ggplot(tw.dfs.combined,aes(x=hour,fill=screenName))  +geom_histogram(aes(y = (..count..)),binwidth=1)
+```
+
+This plot shows similar result as above. And it clearly presents that Dunkin Donuts is more active during 10 am to 12am.
+
+```{r include=FALSE}
+require(xts)
+ts=xts(rep(1,times=nrow(tw.dfs)),tw.dfs$created)
+ts.sum=apply.daily(ts,sum) 
+ts.sum.df=data.frame(date=index(ts.sum), coredata(ts.sum))
+
+colnames(ts.sum.df)=c('date','sum')
+
+ts.d=xts(rep(1,times=nrow(tw.dfs.d)),tw.dfs.d$created)
+ts.sum.d=apply.daily(ts.d,sum) 
+ts.sum.df.d=data.frame(date=index(ts.sum.d), coredata(ts.sum.d))
+
+colnames(ts.sum.df.d)=c('date','sum')
+```
+
+```{r warning=FALSE}
+#plot the time series
+plot7<-ggplot(ts.sum.df)+geom_line(aes(x=date,y=sum))
+plot8<-ggplot(ts.sum.df.d)+geom_line(aes(x=date,y=sum))
+grid.arrange(plot7, plot8,ncol=2)
+#check the autocorrelation
+acf(ts.sum)
+acf(ts.sum.d)
+```
+
+The first two plots shows the sum of tweets in this 3600 records. We can see that the peak of Starbucks presents at the day between Nov 7th and Nov 14th. The peak of Dunkin Donuts presents at about Oct 1st. The maximum of Starbucks is about 300 tweets, the maximum of Dunkin Donuts is about 150 tweets.
+The last two pictures show us the autocorrelation condition of the two accounts.
+
+##3.Analysis of basic characteristics(Favorites and Retweets)
+
+```{r warning=FALSE}
+rtc<-log(na.omit(tw.df$retweetCount))
+fc<-log(na.omit(tw.df$favoriteCount))
+rtc<-as.data.frame(rtc)
+count<-cbind(fc,rtc)
+myplot1<-ggplot(data=count,aes(count$fc))+geom_histogram(fill="red")
+myplot2<-ggplot(data=count,aes(count$rtc))+geom_histogram(fill="blue")
+grid.arrange(myplot1, myplot2, ncol=2)
+
+rtc.d<-log(na.omit(tw.df.d$retweetCount))
+fc.d<-log(na.omit(tw.df.d$favoriteCount))
+rtc.d<-as.data.frame(rtc.d)
+count.d<-cbind(fc.d,rtc.d)
+myplot3<-ggplot(data=count.d,aes(count.d$fc))+geom_histogram(fill="red")
+myplot4<-ggplot(data=count.d,aes(count.d$rtc))+geom_histogram(fill="blue")
+grid.arrange(myplot1, myplot2, ncol=2)
+```
+
+
+The distribution of favorites and retweets are fairly similar of these two brands.
+
+      
+##4.Sentiment analysis
+
+```{r include=FALSE}
+library(syuzhet)
+#nrc_data <- get_nrc_sentiment(as.character(combined$text))
+#nrc.data<-saveRDS(nrc_data,file="nrc.rds")
+#raw_values<-get_sentiment(as.character(combined$text),method="syuzhet")
+#raw.values<-saveRDS(raw_values,file="rv.rds")
+#dct_values <- get_dct_transform(raw_values, low_pass_size = 5, x_reverse_len = 100,scale_vals = F,scale_range = T)
+#dct.values<-saveRDS(dct_values,file="dct.rds")
+
+```
+
+```{r echo=FALSE}
+raw.values<-readRDS("rv.rds")
+simple_plot(raw.values, title = "Syuzhet Plot", legend_pos = "top")
+nrc.data<-readRDS("nrc.rds")
+barplot(
+  sort(colSums(prop.table(nrc.data[, 1:8]))), 
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1, 
+  main = "Emotions in Sample text", xlab="Percentage"
+)
+dct.values<-readRDS("dct.rds")
+plot(
+  dct.values, 
+  type ="l", 
+  main ="Coffee Portrait using Transformed Values", 
+  xlab = "Time", 
+  ylab = "Emotional Valence", 
+  col = "red")
+```
+
+The first two plots fully shows the change of sentiment.
+The barplot tells us most of the attitude is positive, such as trust, joy. Only few of the tweets show negative attitude.
+The last plot shows the variance of the emotion, so we can know the change of the emotion within the time.
+
+##5.Wordcloud
+```{r include=FALSE}
+#library(colorspace)
+#library(wordcloud)
+#library(tm)
+#require(RCurl)
+#coffee_corpus<-Corpus(VectorSource(tw.df))
+#inspect(coffee_corpus[1])
+#coffee_clean<-tm_map(coffee_corpus,removePunctuation)
+#coffee_clean<-tm_map(coffee_clean,content_transformer(tolower))
+#coffee_clean<-tm_map(coffee_clean,removeWords,stopwords("english"))
+#coffee_clean<-tm_map(coffee_clean,removeNumbers)
+#coffee_clean<-tm_map(coffee_clean,stripWhitespace)
+#coffee_clean<-tm_map(coffee_clean,removeWords,c("coffee","false"))
+#coffee.clean<-saveRDS(coffee_clean,file="coffee.rds")
+#star<-readRDS("star.rds")
+#star_corpus<-Corpus(VectorSource(star))
+#inspect(star_corpus[1])
+#star_clean<-tm_map(star_corpus,removePunctuation)
+#star_clean<-tm_map(star_clean,content_transformer(tolower))
+#star_clean<-tm_map(star_clean,removeWords,stopwords("english"))
+#star_clean<-tm_map(star_clean,removeNumbers)
+#star_clean<-tm_map(star_clean,stripWhitespace)
+#star_clean<-tm_map(star_clean,removeWords,c("starbucks","false"))
+#star.clean<-saveRDS(star_clean,file="star_clean.rds")
+#dd<-readRDS("dd.rds")
+#dd_corpus<-Corpus(VectorSource(dd))
+#inspect(dd_corpus[1])
+#dd_clean<-tm_map(dd_corpus,removePunctuation)
+#dd_clean<-tm_map(dd_clean,content_transformer(tolower))
+#dd_clean<-tm_map(dd_clean,removeWords,stopwords("english"))
+#dd_clean<-tm_map(dd_clean,removeNumbers)
+#dd_clean<-tm_map(dd_clean,stripWhitespace)
+#dd_clean<-tm_map(dd_clean,removeWords,c("dunkindonuts","false"))
+#dd.clean<-saveRDS(dd_clean,file="dd_clean.rds")
+```
+
+```{r include=FALSE}
+library(wordcloud)
+coffee_clean<-readRDS("coffee.rds")
+star_clean<-readRDS("star_clean.rds")
+dd_clean<-readRDS("dd_clean.rds")
+```
+
+
+```{r warning=FALSE}
+
+wordcloud(coffee_clean,random.order = FALSE,scale=c(5,0.5),col=rainbow(100),max.words = 30)
+
+wordcloud(star_clean,random.order = FALSE,scale=c(5,0.5),col=rainbow(100),max.words = 30)
+
+wordcloud(dd_clean,random.order = FALSE,scale=c(5,0.5),col=rainbow(100),max.words = 30)
+```
+
+The first plot of coffee shows most people will refer to starbucks, the second plot of starbucks shows a big word "techa", as what I got from the internet, this might be used in Spanish.And some other words shows positive attitude, such as "happy", "love" and "like". The third plot for dunkin donuts doesn't have specific characteristic, but we can see some negative words, including "inconvenience", "sorry" and "apologize".
+
+
+
+##6.Summary
+From this analysis, we simply have a comparison of the top 2 coffee shop in Massachusetts, and generally, Starbucks occupies a bigger part through our analysis. And further analysis could take more factors into account to have an advanced conclusion, such as the preference of the coffee type with different region.
+
+##7.Reference for sentiment analysis:
+      Minqing Hu and Bing Liu. "Mining and Summarizing Customer Reviews." Proceedings of the ACM SIGKDD International Conference on Knowledge Discovery and Data Mining (KDD-2004), Aug 22-25, 2004, Seattle,  Washington, USA

@@ -1,0 +1,64 @@
+---
+title: "Wordcloud by Shiny"
+author: "Zhouyi Zhao"
+date: "Dec 12th"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(devtools)
+library(twitteR)
+library(ROAuth)
+library(streamR)
+library(ggplot2)   
+library(grid)  
+library(ggmap)
+library(tm)
+library(SnowballC)
+library(wordcloud)
+library(shiny)
+library(dplyr)
+library(tidyr)
+library(knitr)
+library(shinythemes)
+```
+
+```{r include=FALSE}
+coffee_clean<-readRDS("coffee.rds")
+star_clean<-readRDS("star_clean.rds")
+dd_clean<-readRDS("dd_clean.rds")
+```
+
+
+```{r include=FALSE}
+coffee_v <- TermDocumentMatrix(coffee_clean) %>% as.matrix() %>% rowSums() %>% sort(decreasing=T)
+coffee_d <- data.frame(word=names(coffee_v),freq=coffee_v,co=rep("coffee",length(coffee_v)))
+
+star_v <- TermDocumentMatrix(star_clean) %>% as.matrix() %>% rowSums() %>% sort(decreasing=T)
+star_d <- data.frame(word=names(star_v),freq=star_v,co=rep("star",length(star_v)))
+
+dd_v <- TermDocumentMatrix(dd_clean) %>% as.matrix() %>% rowSums() %>% sort(decreasing=T)
+dd_d <- data.frame(word=names(dd_v),freq=dd_v,co=rep("dd",length(dd_v)))
+
+word <- rbind(coffee_d,star_d,dd_d)
+```
+
+-----------------------------------------------------------------------
+
+```{r echo=FALSE}
+inputPanel(
+  selectInput('co_word', 'Company', choices = c("coffee"="coffee","Starbucks"="star","Dunkin Donuts"="dd"), selected = "coffee"),
+  sliderInput("word_size","Number of Word Plotted",min = 100,max=500,value = 300,step = 50)
+)
+```
+
+----------------------------
+
+```{r echo=FALSE,fig.height=8}
+renderPlot({
+wordcloud(words = word[word$co==input$co_word,]$word, freq = word[word$co==input$co_word,]$freq, min.freq = 1,
+          max.words=input$word_size, random.order=FALSE, rot.per=0.35, 
+          colors=brewer.pal(8, "Dark2"))
+})
+```
